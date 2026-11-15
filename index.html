@@ -7,7 +7,7 @@
     <link rel="icon" href="data:," />
     <title>Mê Cung Tri Thức 3D</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;800;900&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;800;900&family=JetBrains+Mono:wght@600;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet" />
     <style>
       :root{
         --bg:#070b1d; --panel:#0e1533; --panel2:#131c42; --line:#26336b;
@@ -546,18 +546,212 @@
       .shopCard .own{font-size:12px; font-weight:700; color:#bdeffb;}
       .shopCard .shopBuy{margin-top:auto; width:100%; padding:8px 10px; font-size:13px;}
     </style>
+    <style>
+      /* ================================================================
+         MÀN ĐĂNG NHẬP / ĐĂNG KÝ — PHÒNG TỐI & ĐÈN BÀN (theo mẫu video
+         “Form Animation Using JavaScript!”): đèn bàn SVG bên trái, kéo
+         dây để bật/tắt và đổi màu sáng; màu nhấn của toàn bộ form đi
+         theo biến --acc nên đổi đồng bộ (nút chính, eyebrow, gạch chân
+         tab, checkbox, viền focus, vầng sáng). Khối này đứng SAU lớp
+         Liquid Glass nên ghi đè các quy tắc thẻ trắng cũ của #authScreen;
+         không đổi id/class/logic mà JS đang dùng.
+         ================================================================ */
+      #authScreen{
+        --acc:#ffb020; --accSoft:rgba(255,176,32,.16); --accGlow:rgba(255,176,32,.32); --accInk:#2a1a00;
+        background:radial-gradient(900px 520px at 78% -10%, #131a2e 0%, transparent 55%), linear-gradient(180deg,#0b0d14,#05060a);
+        padding:22px 18px;
+      }
+      #authScreen[data-lamp="1"]{--acc:#37e08b; --accSoft:rgba(55,224,139,.15); --accGlow:rgba(55,224,139,.30); --accInk:#04240f;}
+      #authScreen[data-lamp="2"]{--acc:#7dd3fc; --accSoft:rgba(125,211,252,.16); --accGlow:rgba(125,211,252,.32); --accInk:#082f49;}
+      #authScreen::before{display:none;}
+      /* vầng sáng đèn hắt lên tường */
+      #lampGlow{position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity .7s ease;
+        background:radial-gradient(640px 500px at 26% 44%, var(--accGlow), transparent 66%);}
+      #authScreen.lampOn #lampGlow{opacity:1;}
+      .authStage{position:relative; z-index:1; display:flex; align-items:center; justify-content:center; gap:clamp(18px,4.5vw,64px); width:min(1060px,100%); max-height:100%;}
+
+      /* ---------- đèn bàn ---------- */
+      .lampBox{flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:2px;}
+      #lampBtn{background:none; border:none; padding:0; margin:0; cursor:pointer; line-height:0; border-radius:18px; transition:transform .15s ease;}
+      #lampBtn:active{transform:scale(.985);}
+      #lampBtn:focus-visible{outline:2px solid var(--acc); outline-offset:4px;}
+      #lampBtn svg{width:min(300px,30vw); height:auto; display:block; overflow:visible;}
+      #lampHint{margin:2px 0 0; font-size:12px; font-weight:700; letter-spacing:.05em; color:#8f96a8; text-align:center; transition:color .4s ease, opacity .4s ease;}
+      #authScreen:not(.lampOn) #lampHint{color:var(--acc); animation:lampHintPulse 1.8s ease-in-out infinite;}
+      @keyframes lampHintPulse{0%,100%{opacity:.65;} 50%{opacity:1;}}
+      /* các phần phát sáng của đèn: chỉ hiện khi đèn bật, màu theo --acc */
+      .lampCone,.lampPool,.lampShadeGlow{opacity:0; transition:opacity .55s ease;}
+      #authScreen.lampOn .lampCone{opacity:.85;}
+      #authScreen.lampOn .lampPool{opacity:.5;}
+      #authScreen.lampOn .lampShadeGlow{opacity:.9;}
+      .lampPool{fill:var(--acc);}
+      .lampShadeGlow{fill:var(--acc);}
+      .lampDesk{fill:#241a10;}
+      .coneStop1{stop-color:var(--acc); stop-opacity:.5; transition:stop-color .5s ease;}
+      .coneStop2{stop-color:var(--acc); stop-opacity:0; transition:stop-color .5s ease;}
+      .bulbStop1{stop-color:#fffbe8; transition:stop-color .5s ease;}
+      .bulbStop2{stop-color:var(--acc); transition:stop-color .5s ease;}
+      #authScreen:not(.lampOn) .lampBulb{fill:#26262e;}
+      .cordHandle{fill:#d99a16; stroke:#7a5200; stroke-width:1.2;}
+      .lampCord{transform-box:fill-box;}
+      #lampBtn.pulled .lampCord{animation:cordPull .45s ease;}
+      @keyframes cordPull{30%{transform:translateY(8px);} 60%{transform:translateY(-2px);} 100%{transform:translateY(0);}}
+
+      /* ---------- thẻ form: kính tối ---------- */
+      #authScreen .authCard{
+        flex:0 1 460px; width:min(460px,100%);
+        background:linear-gradient(165deg, rgba(24,27,38,.88), rgba(12,13,20,.92));
+        -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px);
+        border:1px solid rgba(255,255,255,.13); border-radius:20px; color:#eef1f6;
+        box-shadow:0 30px 80px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.09);
+        padding:26px 28px 20px;
+        transition:opacity .55s ease, transform .55s cubic-bezier(.2,.7,.3,1), filter .55s ease;
+      }
+      #authScreen:not(.lampOn) .authCard{opacity:.14; transform:translateY(10px); filter:blur(2.5px) saturate(.6); pointer-events:none;}
+      .authTop{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+      .authEyebrow{font-size:11px; font-weight:800; letter-spacing:.22em; color:var(--acc); transition:color .5s ease;}
+      .authStar{color:var(--acc); font-size:14px; line-height:1; transition:color .5s ease;}
+      .authTitle{font-family:"Playfair Display", Georgia, "Times New Roman", serif; font-weight:700; font-size:clamp(34px,5.4vw,44px); line-height:1.08; margin:12px 0 0; color:#f6f2e9; letter-spacing:.01em;}
+      .authSub{color:#a7aebd; font-size:13.5px; margin:8px 0 2px; line-height:1.5;}
+      #authScreen .schoolLine{color:var(--acc); font-size:13.5px; margin-top:16px; transition:color .5s ease;}
+      .authDesc{color:#7e8698 !important; font-size:12px; margin-top:6px;}
+      /* các phần tử trong thẻ vào lần lượt khi đèn bật (giữ nhịp authUp cũ) */
+      #authScreen .authCard>*{animation:none;}
+      #authScreen.lampOn .authCard>*{animation:authUp .6s cubic-bezier(.2,.7,.3,1) both;}
+      #authScreen.lampOn .authCard>*:nth-child(2){animation-delay:.06s;} #authScreen.lampOn .authCard>*:nth-child(3){animation-delay:.12s;}
+      #authScreen.lampOn .authCard>*:nth-child(4){animation-delay:.18s;} #authScreen.lampOn .authCard>*:nth-child(5){animation-delay:.24s;}
+      #authScreen.lampOn .authCard>*:nth-child(6){animation-delay:.30s;} #authScreen.lampOn .authCard>*:nth-child(7){animation-delay:.36s;}
+      #authScreen.lampOn .authCard>*:nth-child(8){animation-delay:.42s;} #authScreen.lampOn .authCard>*:nth-child(9){animation-delay:.48s;}
+
+      /* ---------- tab: chữ + gạch chân màu nhấn trượt ---------- */
+      #authScreen .tabs{background:transparent; border:none; border-bottom:1px solid rgba(255,255,255,.12); border-radius:0; padding:0; gap:0; margin:18px 0 6px;}
+      #authScreen .tabBtn{flex:0 1 auto; padding:9px 4px 11px; margin-right:26px; border-radius:0; color:#8f96a8; font-size:14.5px;}
+      #authScreen .tabBtn.on{color:#f2f4f8;}
+      #authScreen .tabPill{height:3px !important; top:auto !important; bottom:-1px; border-radius:3px; background:var(--acc); box-shadow:0 0 12px var(--accGlow); transition:left .34s cubic-bezier(.2,.8,.3,1), width .34s cubic-bezier(.2,.8,.3,1), background .5s ease;}
+      #authScreen .tabBtn:focus-visible{outline-color:var(--acc);}
+
+      /* ---------- ô nhập tối + icon bên trái ---------- */
+      #authScreen .authCard .lbl{color:#9aa3b5;}
+      #authScreen .authCard .field{background:rgba(255,255,255,.055); color:#eef1f6; border-color:rgba(255,255,255,.13); border-radius:12px;}
+      #authScreen .authCard .field::placeholder{color:#6d7587;}
+      /* ô có nhãn nổi: nhãn ở giữa đóng vai trò placeholder nên ẩn placeholder,
+         chỉ hiện khi ô được focus (lúc đó nhãn đã thu lên trên) */
+      #authScreen .authCard .flWrap .field::placeholder{color:transparent;}
+      #authScreen .authCard .flWrap:focus-within .field::placeholder{color:#6d7587;}
+      #authScreen .authCard .field:focus{border-color:var(--acc); box-shadow:0 0 0 3px var(--accSoft);}
+      #authScreen .authCard .flWrap:focus-within>.lbl,#authScreen .authCard .flWrap.filled>.lbl{color:var(--acc); background:#181b26;}
+      /* nhãn ở trạng thái nghỉ lùi sang phải sau icon trái (chữ bắt đầu đúng vị trí
+         chữ nhập vào); khi nhãn nổi lên (focus / đã nhập) thì trở về mép trái */
+      #authScreen .authCard .flWrap>.lbl{left:32px; transition:top .2s ease, left .2s ease, transform .2s ease, font-size .2s ease, color .2s ease, background .2s ease;}
+      #authScreen .authCard .flWrap:focus-within>.lbl,#authScreen .authCard .flWrap.filled>.lbl{left:11px;}
+      #authScreen .authCard .flWrap .field{padding-left:38px;}
+      #authScreen .authCard .flWrap::before{content:""; position:absolute; left:13px; top:50%; transform:translateY(-50%); width:16px; height:16px; z-index:2; pointer-events:none; opacity:.55; background-repeat:no-repeat; background-position:center; background-size:contain;
+        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23cfd6e4' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21c1.5-4 5-5.5 8-5.5s6.5 1.5 8 5.5'/%3E%3C/svg%3E");}
+      #authScreen .authCard .flWrap:has(.pwWrap)::before,
+      #authScreen .authCard .flWrap:has(> input[type="password"])::before{
+        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23cfd6e4' stroke-width='2' stroke-linecap='round'%3E%3Crect x='4' y='10' width='16' height='10' rx='2'/%3E%3Cpath d='M8 10V7a4 4 0 0 1 8 0v3'/%3E%3C/svg%3E");}
+      #authScreen .authCard .pwWrap .eye{color:#9aa3b5;}
+      #authScreen .authCard .tagline{color:#9aa3b5;}
+      #authScreen .authCard span[style*="--muted"]{color:#9aa3b5 !important;}
+      #authScreen .authCard .err{color:#ff9d9d;}
+      #authScreen .authCard .ok{color:#5eeaa0;}
+      #authScreen .authCard .pwCount{color:#9aa3b5;} #authScreen .authCard .pwCount.ok{color:#5eeaa0;} #authScreen .authCard .pwCount.bad{color:#ff9d9d;}
+      #authScreen .authCard .checkRow{color:#c3c9d6;}
+      #authScreen .authCard .checkRow input{accent-color:var(--acc);}
+      #authScreen .authCard .linkBtn{color:var(--acc);}
+      #authScreen #adminFirstBox{background:rgba(255,255,255,.05); border-color:var(--acc); color:#eef1f6;}
+      #authScreen #adminFirstBox .lbl{color:#9aa3b5;}
+      #authScreen #adminFirstBox .field{background:rgba(255,255,255,.06); color:#eef1f6; border-color:rgba(255,255,255,.16); padding-left:12px;}
+
+      /* ---------- nút chính + chọn khối: màu nhấn của đèn ---------- */
+      #authScreen .btn.primary{background:var(--acc); border-color:transparent; color:var(--accInk); font-weight:800; box-shadow:0 10px 26px -8px var(--accGlow); transition:background .5s ease, color .5s ease, box-shadow .3s ease, transform .15s ease;}
+      #authScreen .btn.primary:hover{background:var(--acc); filter:brightness(1.08); box-shadow:0 12px 30px -8px var(--accGlow);}
+      #authScreen .btn.primary::before{display:none;}
+      #authScreen .segGrade{background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.1);}
+      #authScreen .segBtn{color:#9aa3b5;}
+      #authScreen .segBtn.on{color:var(--accInk);}
+      #authScreen .segPill{background:var(--acc); box-shadow:0 6px 16px -6px var(--accGlow); transition:left .32s cubic-bezier(.2,.8,.3,1), top .32s cubic-bezier(.2,.8,.3,1), width .32s cubic-bezier(.2,.8,.3,1), height .32s cubic-bezier(.2,.8,.3,1), background .5s ease;}
+      #authScreen .pwBar{background:rgba(255,255,255,.12);}
+
+      /* ---------- responsive ---------- */
+      @media(max-width:820px){
+        #authScreen{padding:14px 12px; overflow-y:auto;}
+        .authStage{flex-direction:column; gap:2px; max-height:none; margin:auto;}
+        .lampBox{flex-direction:row; align-items:center; gap:12px;}
+        #lampBtn svg{width:104px;}
+        #lampHint{margin:0; text-align:left;}
+        #lampGlow{background:radial-gradient(420px 320px at 50% 10%, var(--accGlow), transparent 66%);}
+        #authScreen .authCard{flex:none; width:100%; max-height:none; padding:22px 20px 16px;}
+      }
+      @media (max-height:540px){
+        #authScreen .authCard{padding:18px 20px 14px;}
+        #lampBtn svg{width:150px;}
+        .authTitle{font-size:30px;}
+      }
+      @media (max-height:540px) and (max-width:820px){
+        #lampBtn svg{width:84px;}
+      }
+    </style>
   </head>
   <body>
     <canvas id="gameCanvas"></canvas>
     <div id="errOverlay"></div>
 
     <!-- ================= AUTH ================= -->
-    <div id="authScreen">
-      <div class="authCard">
-        <h1 class="gameTitle">MÊ CUNG <span class="a">TRI THỨC</span> <span class="b">3D</span></h1>
-        <p class="schoolLine">🏫 THCS Lương Thế Vinh - Cần Thơ</p>
-        <p class="tagline">Game phiêu lưu học đường góc nhìn thứ nhất: vượt 10 mê cung, thu thập dụng cụ học tập, trả lời câu hỏi theo khối lớp và đua top cùng bạn bè.</p>
-        <div class="tabs">
+    <div id="authScreen" class="lampOn" data-lamp="0">
+      <div id="lampGlow" aria-hidden="true"></div>
+      <div class="authStage">
+        <div class="lampBox">
+          <button id="lampBtn" type="button" aria-label="Bật / tắt đèn bàn" aria-pressed="true" title="Bấm vào đèn hoặc dây kéo để bật / tắt và đổi màu đèn">
+            <svg viewBox="0 0 300 340" role="img" aria-hidden="true" focusable="false">
+              <defs>
+                <linearGradient id="coneGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop class="coneStop1" offset="0" />
+                  <stop class="coneStop2" offset="1" />
+                </linearGradient>
+                <linearGradient id="metalGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#3b3b46" />
+                  <stop offset="1" stop-color="#17171d" />
+                </linearGradient>
+                <radialGradient id="bulbGrad" cx="0.5" cy="0.42" r="0.65">
+                  <stop class="bulbStop1" offset="0" />
+                  <stop class="bulbStop2" offset="1" />
+                </radialGradient>
+              </defs>
+              <polygon class="lampCone" points="191,195 239,160 297,318 175,318" fill="url(#coneGrad)" />
+              <ellipse class="lampPool" cx="236" cy="317" rx="62" ry="7" />
+              <rect class="lampDesk" x="14" y="316" width="272" height="3" rx="1.5" />
+              <ellipse cx="130" cy="318" rx="86" ry="6" fill="#000" opacity=".45" />
+              <path d="M84,318 L176,318 L164,300 L96,300 Z" fill="url(#metalGrad)" stroke="#000" stroke-width="1.5" />
+              <line x1="130" y1="302" x2="86" y2="208" stroke="#26262e" stroke-width="11" stroke-linecap="round" />
+              <line x1="127" y1="300" x2="85" y2="212" stroke="#454552" stroke-width="3" stroke-linecap="round" />
+              <line x1="86" y1="208" x2="188" y2="140" stroke="#26262e" stroke-width="11" stroke-linecap="round" />
+              <line x1="88" y1="204" x2="184" y2="140" stroke="#454552" stroke-width="3" stroke-linecap="round" />
+              <circle cx="86" cy="208" r="11" fill="#2c2c34" stroke="#f5b301" stroke-width="2.5" />
+              <circle cx="86" cy="208" r="3.5" fill="#f5b301" />
+              <circle cx="188" cy="140" r="10" fill="#2c2c34" stroke="#f5b301" stroke-width="2.5" />
+              <circle cx="188" cy="140" r="3.2" fill="#f5b301" />
+              <g transform="rotate(-36 188 140)">
+                <rect x="176" y="126" width="24" height="14" fill="#1b1b21" stroke="#000" stroke-width="1" />
+                <path d="M174,140 L202,140 L218,186 L158,186 Z" fill="#141419" stroke="#f5b301" stroke-width="2" stroke-linejoin="round" />
+                <ellipse class="lampShadeGlow" cx="188" cy="183" rx="24" ry="5" />
+                <circle class="lampBulb" cx="188" cy="188" r="7.5" fill="url(#bulbGrad)" />
+              </g>
+              <g class="lampCord">
+                <path d="M197,147 C208,172 200,190 207,212" fill="none" stroke="#d8d8de" stroke-width="2.5" />
+                <circle cx="203" cy="168" r="2.8" fill="#e8e8ee" />
+                <circle cx="202" cy="186" r="2.8" fill="#e8e8ee" />
+                <rect class="cordHandle" x="199" y="210" width="15" height="24" rx="7.5" />
+              </g>
+            </svg>
+          </button>
+          <p id="lampHint">Kéo để đổi màu đèn</p>
+        </div>
+        <div class="authCard">
+          <div class="authTop"><span class="authEyebrow">MÊ CUNG TRI THỨC 3D</span><span class="authStar" aria-hidden="true">✦</span></div>
+          <h1 class="authTitle" id="authTitle">Chào mừng</h1>
+          <p class="authSub" id="authSub">Đăng nhập để tiếp tục chơi</p>
+          <div class="tabs">
           <button class="tabBtn on" id="tabLogin">Đăng nhập</button>
           <button class="tabBtn" id="tabRegister">Đăng ký tài khoản</button>
         </div>
@@ -579,7 +773,7 @@
             <input class="field" id="liPass2" type="password" autocomplete="new-password" aria-label="Nhập lại mật khẩu Admin" />
           </div>
           <div class="err" id="loginErr"></div>
-          <button class="btn primary" type="submit" id="btnLoginSubmit" style="width:100%; padding:12px; font-size:15.5px;">▶ Vào game</button>
+          <button class="btn primary" type="submit" id="btnLoginSubmit" style="width:100%; padding:12px; font-size:15.5px;">Đăng nhập →</button>
           <div style="margin-top:12px; display:flex; justify-content:space-between; align-items:center;">
             <span style="font-size:12.5px; color:var(--muted);">🔑 Quên mật khẩu? Hãy nhờ giáo viên (Admin) đặt lại mật khẩu mới giúp — học sinh không tự đặt lại được.</span>
             <span style="font-size:12.5px; color:var(--muted);">Chưa có tài khoản? Bấm tab Đăng ký ↑</span>
@@ -615,9 +809,12 @@
           </select>
           <p class="tagline" style="margin-top:10px; font-size:12.5px;">🔑 Hãy ghi nhớ mật khẩu của mình: nếu quên, bạn <b>không tự đặt lại được</b> — hãy nhờ giáo viên (Admin) đặt lại mật khẩu mới giúp.</p>
           <div class="err" id="regErr"></div>
-          <button class="btn primary" type="submit" id="btnRegSubmit" style="width:100%; padding:12px; font-size:15.5px;">Tạo tài khoản &amp; vào game</button>
+          <button class="btn primary" type="submit" id="btnRegSubmit" style="width:100%; padding:12px; font-size:15.5px;">Tạo tài khoản →</button>
           <p class="tagline" style="margin-top:10px;">Đăng ký chỉ dành cho học sinh. Mật khẩu được băm chậm có muối (50.000 vòng SHA-256) trước khi lưu — game không bao giờ lưu mật khẩu gốc.</p>
         </form>
+          <p class="schoolLine">🏫 THCS Lương Thế Vinh - Cần Thơ</p>
+          <p class="tagline authDesc">Game phiêu lưu học đường góc nhìn thứ nhất: vượt 10 mê cung, thu thập dụng cụ học tập, trả lời câu hỏi theo khối lớp và đua top cùng bạn bè.</p>
+        </div>
       </div>
     </div>
 
@@ -1589,7 +1786,7 @@
       $('regForm').classList.toggle('hidden', which!=='register');
       adminSetupPending=false;
       const afb=$('adminFirstBox'); if(afb) afb.classList.add('hidden');
-      const lb=$('btnLoginSubmit'); if(lb) lb.textContent='▶ Vào game';
+      const lb=$('btnLoginSubmit'); if(lb) lb.textContent='Đăng nhập →';
     }
     $('tabLogin').onclick=()=>setAuthTab('login');
     $('tabRegister').onclick=()=>setAuthTab('register');
@@ -1673,7 +1870,7 @@
       }catch(ex){
         $('regErr').textContent='Có lỗi khi đăng ký: '+((ex&&ex.message)||'không xác định')+'. Hãy thử bấm Đăng ký lại.';
       }finally{
-        btn.disabled=false; btn.textContent='Tạo tài khoản & vào game';
+        btn.disabled=false; btn.textContent='Tạo tài khoản →';
       }
     });
 
@@ -1744,7 +1941,7 @@
       }catch(ex){
         $('loginErr').textContent='Có lỗi khi đăng nhập: '+((ex&&ex.message)||'không xác định')+'. Hãy thử bấm Vào game lại.';
       }finally{
-        btn.disabled=false; btn.textContent= adminSetupPending ? '🔐 Xác nhận mật khẩu & vào Quản trị' : '▶ Vào game';
+        btn.disabled=false; btn.textContent= adminSetupPending ? '🔐 Xác nhận mật khẩu & vào Quản trị' : 'Đăng nhập →';
       }
     });
 
@@ -4522,6 +4719,47 @@
         new MutationObserver(function(){
           if(!modal.classList.contains('hidden')) render();
         }).observe(modal,{attributes:true, attributeFilter:['class']});
+      })();
+
+      /* ---------- đèn bàn ở màn đăng nhập: kéo dây bật/tắt + đổi màu nhấn ----------
+         Chu trình mỗi lần bấm đèn/dây: đang tắt → bật (vàng hổ phách) →
+         xanh lá → trắng xanh lạnh → tắt. Màu nhấn nằm ở biến --acc trên
+         #authScreen (thuộc tính data-lamp) nên cả form đổi màu đồng bộ.
+         Chỉ lo hiển thị — không đụng logic đăng nhập/đăng ký. */
+      (function lampFx(){
+        var scr=g('authScreen'), btn=g('lampBtn'), hint=g('lampHint');
+        if(!scr || !btn) return;
+        var idx=0, on=true;
+        function apply(){
+          scr.classList.toggle('lampOn', on);
+          if(on) scr.setAttribute('data-lamp', String(idx));
+          btn.setAttribute('aria-pressed', on?'true':'false');
+          if(hint) hint.textContent = on ? 'Kéo để đổi màu đèn' : 'Kéo để bật đèn';
+        }
+        btn.addEventListener('click', function(){
+          btn.classList.remove('pulled'); void btn.offsetWidth; btn.classList.add('pulled');
+          if(!on){ on=true; idx=0; }
+          else if(idx<2){ idx++; }
+          else { on=false; idx=0; }
+          apply();
+        });
+        apply();
+      })();
+
+      /* ---------- tiêu đề + dòng phụ của thẻ đổi theo tab Đăng nhập / Đăng ký ---------- */
+      (function authHeadSync(){
+        var t=g('authTitle'), s=g('authSub');
+        if(!t || !s) return;
+        function sync(){
+          var reg=g('tabRegister') && g('tabRegister').classList.contains('on');
+          var nt=reg?'Tạo tài khoản':'Chào mừng', ns=reg?'Tạo tài khoản để bắt đầu':'Đăng nhập để tiếp tục chơi';
+          if(t.textContent!==nt) t.textContent=nt;
+          if(s.textContent!==ns) s.textContent=ns;
+        }
+        ['tabLogin','tabRegister'].forEach(function(id){
+          var b=g(id); if(b) new MutationObserver(sync).observe(b,{attributes:true, attributeFilter:['class']});
+        });
+        sync();
       })();
     })();
     </script>
