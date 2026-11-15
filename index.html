@@ -1330,7 +1330,17 @@
         if(!firebase.apps.length) firebase.initializeApp(cfg);
         fbState.db=firebase.firestore();
         window.__mcttDb=fbState.db;
-        await withTimeout(fbState.db.collection('accounts').doc('__ping__').get(), 5000); // đọc thử: biết chắc mạng + rules cho phép
+        /* Đọc thử MỘT document THẬT để biết chắc mạng + rules cho phép.
+           TUYỆT ĐỐI không dùng id dạng '__ping__': Firestore CẤM id nằm giữa
+           hai cặp '__' (id dành riêng) — lần đọc đó luôn bị từ chối, bản cũ
+           vì thế kết luận “không kết nối được” MÃI MÃI: connected không bao
+           giờ true, fbSaveAccount luôn bỏ qua, tài khoản không hề lên đám
+           mây dù rules mở và bảng xếp hạng (đi đường riêng, không qua cổng
+           connected) vẫn đồng bộ bình thường. Nay đọc doc 'ping-check'
+           (id hợp lệ); doc chưa tồn tại thì snap.exists=false vẫn tính là
+           đọc thành công. Quá giờ (null) cũng KHÔNG kết luận mất kết nối —
+           cứ coi như đã kết nối, lần ghi/đọc thật sau đó tự phân xử. */
+        try{ await withTimeout(fbState.db.collection('accounts').doc('ping-check').get(), 6000); }catch(e){ /* lỗi quyền thật sự: connected vẫn bật, fbSaveAccount/fbGetAccount sẽ báo qua kết quả đọc lại */ }
         fbState.connected=true;
         updateStoreStatus();
         fbMergeAccounts().catch(()=>{});
@@ -1349,20 +1359,42 @@
       fbState.ready=fbConnect(cfg);
       updateStoreStatus();
     }
+    /* Chờ kết nối đám mây sẵn sàng THẬT (tối đa ~12 giây: tải SDK + đọc thử).
+       Các điểm chờ cũ chỉ đợi 3,5 giây — ngắn hơn thời gian fbConnect cần —
+       nên hay kết luận “chưa kết nối” ngay cả khi mạng tốt, rồi bỏ qua bước
+       kiểm tra/ghi đám mây. Mọi thao tác ĐĂNG KÝ / ĐĂNG NHẬP / thêm tài
+       khoản từ nay chờ qua hàm này. Trả về true nếu đã kết nối. */
+    async function fbEnsureReady(){
+      if(fbState.connected) return true;
+      if(fbState.ready){ await withTimeout(fbState.ready, 12000); }
+      if(fbState.connected) return true;
+      /* Lần kết nối đầu thất bại (mạng chập chờn lúc mở game): thử kết nối
+         lại một lần nữa thay vì chịu thua cả phiên chơi. */
+      if(fbState.configured||fbActiveConfig()){
+        fbState.ready=fbConnect(fbActiveConfig());
+        await withTimeout(fbState.ready, 12000);
+      }
+      return !!fbState.connected;
+    }
     async function fbSaveAccount(rec){
-      if(!fbState.connected||!fbState.db||!rec||!rec.username) return false;
+      /* Chỉ cần có db handle là ghi được — KHÔNG chờ cờ connected: cờ đó
+         từng kẹt ở false vì lỗi ở bước đọc thử kết nối, làm MỌI lần lưu
+         tài khoản bị bỏ qua trong im lặng. Ghi xong, nơi gọi luôn đọc lại
+         để kiểm chứng (fbFetchAccount) nên ghi hỏng vẫn bị phát hiện. */
+      if(!fbState.db||!rec||!rec.username) return false;
       /* Bản ghi RÚT GỌN (chỉ có tên nhân vật/khối để hiển thị danh sách, không có
          mã băm mật khẩu — xem fbMergeAccounts) KHÔNG BAO GIỜ được ghi lên đám
          mây: set() thay toàn bộ document nên sẽ xóa mất mật khẩu thật của tài
          khoản. Muốn sửa tài khoản rút gọn phải tải bản đầy đủ của chính tài
          khoản đó về trước (fbGetAccount). */
       if(!rec.passHash) return false;
+      const docId=String(rec.username).toLowerCase(); /* id document LUÔN chữ thường — khớp mọi lần đọc (đọc cũng hạ chữ thường) */
       try{
         /* set() thay toàn bộ document, nên lần lưu này cũng xóa mọi trường
            thừa của bản cũ (kể cả trường SĐT của thời còn cho học sinh tự đặt
            lại mật khẩu) khỏi document trên đám mây. */
-        await fbState.db.collection('accounts').doc(rec.username).set({
-          username:rec.username, passHash:rec.passHash, charName:rec.charName,
+        await fbState.db.collection('accounts').doc(docId).set({
+          username:docId, passHash:rec.passHash, charName:rec.charName,
           grade:rec.grade, role:rec.role||'student', createdAt:rec.createdAt||Date.now(), updatedAt:Date.now()
         });
         /* DANH BẠ CÔNG KHAI (collection 'directory'): chỉ gồm các trường
@@ -1374,7 +1406,7 @@
            TỪNG document một khi đăng nhập / khi Admin
            sửa đúng tài khoản đó — không bao giờ đọc cả collection. */
         try{
-          await fbState.db.collection('directory').doc(rec.username).set({
+          await fbState.db.collection('directory').doc(docId).set({
             username:rec.username, charName:rec.charName, grade:rec.grade,
             role:rec.role||'student', createdAt:rec.createdAt||Date.now(), updatedAt:Date.now()
           });
@@ -1382,15 +1414,27 @@
         return true;
       }catch(e){ return false; }
     }
-    async function fbGetAccount(username){
-      if(!fbState.db) return null;
+    /* Đọc MỘT tài khoản từ đám mây với kết quả BA TRẠNG THÁI:
+       {status:'found', rec} = đám mây có tài khoản này (bản đầy đủ);
+       {status:'missing'}    = đọc thành công và CHẮC CHẮN chưa có;
+       {status:'unknown'}    = không đọc được (chưa có db / mất mạng / quá
+       giờ / lỗi) → người gọi KHÔNG được kết luận “chưa có tài khoản”.
+       Bản cũ gộp 'missing' và 'unknown' thành một null duy nhất nên hễ
+       mạng chậm là game tưởng tên còn trống và cho đăng ký trùng. */
+    async function fbFetchAccount(username){
+      if(!fbState.db) return {status:'unknown'};
       try{
-        const snap=await withTimeout(fbState.db.collection('accounts').doc(String(username).toLowerCase()).get(), 4500);
-        if(!snap||!snap.exists) return null;
+        const snap=await withTimeout(fbState.db.collection('accounts').doc(String(username).toLowerCase()).get(), 8000);
+        if(!snap) return {status:'unknown'};
+        if(!snap.exists) return {status:'missing'};
         const d=snap.data()||{};
-        if(!d.passHash) return null;
-        return { passHash:d.passHash, charName:d.charName||d.displayName||String(username), grade:+d.grade||6, role:d.role||'student', createdAt:d.createdAt||Date.now() };
-      }catch(e){ return null; }
+        if(!d.passHash) return {status:'missing'};
+        return {status:'found', rec:{ passHash:d.passHash, charName:d.charName||d.displayName||String(username), grade:+d.grade||6, role:d.role||'student', createdAt:d.createdAt||Date.now() }};
+      }catch(e){ return {status:'unknown'}; }
+    }
+    async function fbGetAccount(username){
+      const r=await fbFetchAccount(username);
+      return r.status==='found' ? r.rec : null;
     }
     /* Kiểm tra MỘT tài khoản đã có document trên đám mây chưa bằng cách đọc
        ĐÚNG document của nó trong 'accounts' (cùng kiểu đọc 1-document như
@@ -1574,7 +1618,7 @@
     async function mergeCloudProgress(username){
       try{
         if(!fbState.db) return;
-        if(fbState.ready) await withTimeout(fbState.ready, 3500);
+        await fbEnsureReady();
         const cloud=await fbGetProgress(username);
         if(!cloud) return;
         const local=getProgressFor(username);
@@ -1847,34 +1891,52 @@
         const users=loadJSON(LS_USERS,{});
         if(findUserKey(users,u)) return err('Tên đăng nhập này đã có người dùng. Hãy chọn tên khác hoặc đăng nhập.');
         btn.disabled=true; btn.textContent='Đang tạo tài khoản…';
-        /* Tên này có thể đã đăng ký ở MÁY KHÁC và chỉ còn trên đám mây: kiểm tra
-           Firestore trước để không tạo trùng / ghi đè tài khoản của bạn khác. */
-        if(fbState.configured){
-          if(fbState.ready) await withTimeout(fbState.ready,3500);
-          if(await fbGetAccount(u)) return err('Tên đăng nhập này đã có người dùng (đã đăng ký ở máy khác). Hãy chọn tên khác hoặc đăng nhập.');
+        /* Đám mây là SỔ ĐĂNG KÝ CHUNG của mọi máy: chờ kết nối sẵn sàng rồi
+           kiểm tra tên trên đám mây TRƯỚC khi tạo. Chỉ khi đám mây trả lời
+           CHẮC CHẮN mới quyết định: đã có → chặn (kể cả tài khoản đăng ký ở
+           máy khác); chưa có → tạo mới và GHI LÊN ĐÁM MÂY TRƯỚC, đọc lại
+           kiểm chứng xong mới báo thành công — nhờ vậy tài khoản vừa đăng
+           ký ở máy này là qua máy khác đăng nhập được ngay, và không máy
+           nào đăng ký trùng được nữa. Không hỏi được đám mây (mất mạng)
+           thì KHÔNG cho tạo tài khoản mới — tránh tạo thêm một bản trùng
+           chỉ nằm trên một máy như lỗi trước đây. */
+        btn.textContent='Đang kết nối đám mây…';
+        const cloudReady=await fbEnsureReady();
+        if(!cloudReady){
+          return err('Chưa kết nối được đám mây (Firebase) nên chưa đăng ký được — tài khoản phải được lưu lên đám mây thì mới đăng nhập được ở máy khác. Hãy kiểm tra mạng rồi bấm Đăng ký lại.');
+        }
+        btn.textContent='Đang kiểm tra tên đăng nhập trên đám mây…';
+        let probe=await fbFetchAccount(u);
+        if(probe.status==='unknown') probe=await fbFetchAccount(u); /* mạng chập chờn: hỏi lại một lần */
+        if(probe.status==='found') return err('Tên đăng nhập này đã có người dùng (đã đăng ký ở máy khác). Hãy chọn tên khác hoặc đăng nhập.');
+        if(probe.status!=='missing'){
+          return err('Chưa kiểm tra được tên đăng nhập trên đám mây (mạng chập chờn). Hãy kiểm tra mạng rồi bấm Đăng ký lại — game không tạo tài khoản khi chưa chắc chắn, để tránh trùng tài khoản giữa các máy.');
         }
         const hash=passHashNew(p);
         const rec={ passHash:hash, charName:c, grade:g, role:'student', createdAt:Date.now() };
+        btn.textContent='Đang lưu tài khoản lên đám mây…';
+        let cloudOk=false;
+        for(let attempt=0; attempt<2 && !cloudOk; attempt++){
+          if(await fbSaveAccount(Object.assign({username:u}, rec))){
+            const back=await fbFetchAccount(u);
+            cloudOk=(back.status==='found' && back.rec.charName===c && back.rec.passHash===hash);
+          }
+        }
+        if(!cloudOk){
+          return err('Chưa lưu được tài khoản lên đám mây (mạng chập chờn hoặc Firebase đang bận). Hãy kiểm tra mạng rồi bấm Đăng ký lại.');
+        }
+        /* Đám mây đã có tài khoản → giờ mới lưu bản sao trên máy này để
+           đăng nhập dự phòng khi mất mạng. */
         users[u]=rec;
         removeDeletedUser(u);
         saveJSON(LS_USERS,users);
-        /* KIỂM CHỨNG BỀN SAU KHI LƯU — tài khoản phải thật sự nằm ở ÍT NHẤT MỘT
-           nơi bền: (a) localStorage thật của máy này (đọc thẳng, KHÔNG qua bản
-           sao trong bộ nhớ như bản cũ — bản cũ kiểm chứng trúng bản sao nhớ tạm
-           nên báo thành công giả rồi mất tài khoản), hoặc (b) Firestore (ghi
-           xong đọc lại đúng tên nhân vật). Cả hai đều không đạt mới báo lỗi. */
         const durableBack=loadDurable(LS_USERS,{});
         const dk=findUserKey(durableBack,u);
-        let localOk=!!(dk&&durableBack[dk]&&durableBack[dk].charName===c);
-        let cloudOk=false;
-        if(fbState.connected){
-          if(await fbSaveAccount(Object.assign({username:u}, rec))){
-            const back=await fbGetAccount(u);
-            cloudOk=!!(back&&back.charName===c);
-          }
-        }
-        if(!localOk && !cloudOk){
-          return err('Không lưu bền được tài khoản: trình duyệt đang chặn lưu trữ trên máy này và đám mây (Firebase) chưa kết nối được. Hãy mở game bằng trình duyệt Chrome (không dùng chế độ ẩn danh), kiểm tra mạng rồi bấm Đăng ký lại.');
+        const localOk=!!(dk&&durableBack[dk]&&durableBack[dk].charName===c);
+        if(!localOk){
+          /* Máy này chặn lưu trữ (ẩn danh…): tài khoản VẪN an toàn trên đám
+             mây và đăng nhập lại được ở mọi máy — chỉ báo để người dùng biết. */
+          try{ toast('☁️ Tài khoản đã lưu lên đám mây — đăng nhập được ở mọi máy. (Máy này đang chặn lưu trữ trên máy nên sẽ cần mạng mỗi lần đăng nhập.)'); }catch(e){}
         }
         $('regErr').textContent='';
         startSession({username:u, charName:c, grade:g, role:'student'}, true);
@@ -1929,11 +1991,18 @@
            / chưa kết nối được đám mây. */
         if(fbState.configured && !isDeletedUser(u)){
           btn.textContent='Đang kiểm tra tài khoản trên đám mây…';
-          if(fbState.ready) await withTimeout(fbState.ready,3500);
+          await fbEnsureReady(); /* chờ kết nối sẵn sàng THẬT (tối đa ~12s + thử lại 1 lần) thay vì 3,5s như bản cũ */
           if(fbState.connected){
-            const cloudAcc=await fbGetAccount(u);
-            if(cloudAcc){ users[u]=cloudAcc; saveJSON(LS_USERS,users); key=u; }
-            else if(key){ fbSaveAccount(Object.assign({username:key}, users[key])); /* có trên máy mà đám mây chưa có → đẩy lên luôn để máy khác dùng được */ }
+            const probe=await fbFetchAccount(u);
+            if(probe.status==='found'){ users[u]=probe.rec; saveJSON(LS_USERS,users); key=u; }
+            else if(probe.status==='missing' && key && users[key] && users[key].passHash){
+              /* Có trên máy mà đám mây CHẮC CHẮN chưa có (tài khoản đăng ký
+                 từ thời lỗi đồng bộ): đẩy lên đám mây ngay trong lần đăng
+                 nhập này để từ nay máy khác cũng vào được. */
+              await fbSaveAccount(Object.assign({username:key}, users[key]));
+            }
+            /* probe 'unknown' (mạng chập chờn): không ghi đè gì, dùng bản
+               trên máy ở dưới như dự phòng. */
           }
           /* Chưa kết nối được (mất mạng): rơi xuống dùng bản trên máy như cũ. */
         }
@@ -4393,7 +4462,7 @@
          băm mật khẩu): tải bản đầy đủ của ĐÚNG tài khoản này từ đám mây về
          trước khi sửa — nếu không, lúc đẩy lên sẽ làm mất mật khẩu thật. */
       if(!users[k].passHash && fbState.configured){
-        if(fbState.ready) await withTimeout(fbState.ready,3500);
+        await fbEnsureReady();
         const full=await fbGetAccount(k);
         if(full) users[k]=Object.assign({}, users[k], full);
         if(!users[k].passHash){ $('ueMsg').textContent='Chưa tải được thông tin đầy đủ của tài khoản này từ đám mây (có thể do mất mạng) — hãy kiểm tra mạng rồi bấm Lưu lại, tránh ghi đè làm mất mật khẩu của học sinh.'; return; }
@@ -4452,12 +4521,27 @@
       const users=loadJSON(LS_USERS,{});
       if(findUserKey(users,u)){ msg.textContent='Tên đăng nhập này đã có người dùng. Hãy chọn tên khác.'; return; }
       if(fbState.configured){
-        if(fbState.ready) await withTimeout(fbState.ready,3500);
-        if(!isDeletedUser(u) && await fbGetAccount(u)){ msg.textContent='Tên đăng nhập này đã có người dùng (đã đăng ký ở máy khác). Hãy chọn tên khác.'; return; }
+        /* Cùng quy tắc với form Đăng ký: chỉ tạo khi đám mây trả lời chắc
+           chắn tên còn trống, và ghi lên đám mây trước rồi mới tính là xong. */
+        msg.textContent='Đang kiểm tra tên trên đám mây…';
+        if(!(await fbEnsureReady())){ msg.textContent='Chưa kết nối được đám mây (Firebase) — kiểm tra mạng rồi thử lại. Tài khoản phải lên được đám mây thì máy khác mới đăng nhập được.'; return; }
+        let probeA=await fbFetchAccount(u);
+        if(probeA.status==='unknown') probeA=await fbFetchAccount(u);
+        if(probeA.status==='found'){ msg.textContent='Tên đăng nhập này đã có người dùng (đã đăng ký ở máy khác). Hãy chọn tên khác.'; return; }
+        if(probeA.status!=='missing'){ msg.textContent='Chưa kiểm tra được tên trên đám mây (mạng chập chờn) — kiểm tra mạng rồi thử lại.'; return; }
       }
       const rec={ passHash:passHashNew(p), charName:c, grade:g, role:'student', createdAt:Date.now() };
+      let cloudOk=false;
+      if(fbState.configured){
+        for(let attempt=0; attempt<2 && !cloudOk; attempt++){
+          if(await fbSaveAccount(Object.assign({username:u}, rec))){
+            const backA=await fbFetchAccount(u);
+            cloudOk=(backA.status==='found' && backA.rec.charName===c);
+          }
+        }
+        if(!cloudOk){ msg.textContent='Chưa lưu được tài khoản lên đám mây — kiểm tra mạng rồi bấm Thêm lại.'; return; }
+      }
       users[u]=rec; removeDeletedUser(u); saveJSON(LS_USERS,users);
-      const cloudOk=await fbSaveAccount(Object.assign({username:u}, rec));
       if(isDeletedUser(u)) removeDeletedUser(u);
       touchContent();
       $('nuUser').value=''; $('nuPass').value=''; $('nuChar').value='';
