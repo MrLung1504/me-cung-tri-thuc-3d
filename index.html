@@ -568,6 +568,15 @@
       #lampGlow{position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity .7s ease;
         background:radial-gradient(640px 500px at 26% 44%, var(--accGlow), transparent 66%);}
       #authScreen.lampOn #lampGlow{opacity:1;}
+      /* mê cung nhìn từ trên xuống vẽ trên tường phía sau đèn: canvas #wallMaze
+         do JS vẽ (Recursive Backtracking như trong game), chỉ hiện khi đèn bật,
+         màu nét theo --acc; mask radial làm mê cung rõ nhất ở vùng sáng của đèn
+         (26% 44% — cùng tâm với #lampGlow) và mờ dần ra xa. Nằm dưới .authStage
+         (z-index 1) nên không che chữ/form. */
+      #wallMaze{position:absolute; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; opacity:0; transition:opacity .8s ease;
+        -webkit-mask-image:radial-gradient(780px 580px at 26% 44%, #000 24%, rgba(0,0,0,.55) 58%, transparent 86%);
+        mask-image:radial-gradient(780px 580px at 26% 44%, #000 24%, rgba(0,0,0,.55) 58%, transparent 86%);}
+      #authScreen.lampOn #wallMaze{opacity:.55;}
       .authStage{position:relative; z-index:1; display:flex; align-items:center; justify-content:center; gap:clamp(18px,4.5vw,64px); width:min(1060px,100%); max-height:100%;}
 
       /* ---------- đèn bàn ---------- */
@@ -681,6 +690,7 @@
         #lampBtn svg{width:104px;}
         #lampHint{margin:0; text-align:left;}
         #lampGlow{background:radial-gradient(420px 320px at 50% 10%, var(--accGlow), transparent 66%);}
+        #wallMaze{-webkit-mask-image:radial-gradient(480px 400px at 50% 10%, #000 20%, rgba(0,0,0,.5) 55%, transparent 85%); mask-image:radial-gradient(480px 400px at 50% 10%, #000 20%, rgba(0,0,0,.5) 55%, transparent 85%);}
         #authScreen .authCard{flex:none; width:100%; max-height:none; padding:22px 20px 16px;}
       }
       @media (max-height:540px){
@@ -698,11 +708,12 @@
     <div id="errOverlay"></div>
 
     <!-- ================= AUTH ================= -->
-    <div id="authScreen" class="lampOn" data-lamp="0">
+    <div id="authScreen" data-lamp="0">
       <div id="lampGlow" aria-hidden="true"></div>
+      <canvas id="wallMaze" aria-hidden="true"></canvas>
       <div class="authStage">
         <div class="lampBox">
-          <button id="lampBtn" type="button" aria-label="Bật / tắt đèn bàn" aria-pressed="true" title="Bấm vào đèn hoặc dây kéo để bật / tắt và đổi màu đèn">
+          <button id="lampBtn" type="button" aria-label="Bật / tắt đèn bàn" aria-pressed="false" title="Bấm vào đèn hoặc dây kéo để bật / tắt và đổi màu đèn">
             <svg viewBox="0 0 300 340" role="img" aria-hidden="true" focusable="false">
               <defs>
                 <linearGradient id="coneGrad" x1="0" y1="0" x2="0" y2="1">
@@ -745,7 +756,7 @@
               </g>
             </svg>
           </button>
-          <p id="lampHint">Kéo để đổi màu đèn</p>
+          <p id="lampHint">Kéo để bật đèn</p>
         </div>
         <div class="authCard">
           <div class="authTop"><span class="authEyebrow">MÊ CUNG TRI THỨC 3D</span><span class="authStar" aria-hidden="true">✦</span></div>
@@ -4729,7 +4740,7 @@
       (function lampFx(){
         var scr=g('authScreen'), btn=g('lampBtn'), hint=g('lampHint');
         if(!scr || !btn) return;
-        var idx=0, on=true;
+        var idx=0, on=false;
         function apply(){
           scr.classList.toggle('lampOn', on);
           if(on) scr.setAttribute('data-lamp', String(idx));
@@ -4744,6 +4755,75 @@
           apply();
         });
         apply();
+      })();
+
+      /* ---------- mê cung trên tường phía sau đèn (màn đăng nhập) ----------
+         Sinh mê cung bằng Recursive Backtracking — cùng thuật toán với
+         genMaze trong game — rồi vẽ các bức tường nhìn từ trên xuống lên
+         canvas #wallMaze. Canvas chỉ hiện khi đèn bật (CSS lo độ mờ và
+         vùng sáng quanh đèn); ở đây chỉ vẽ lại khi màu đèn đổi (data-lamp)
+         hoặc khi đổi kích thước màn hình. Chỉ trang trí, không đụng logic. */
+      (function wallMazeFx(){
+        var scr=document.getElementById('authScreen'), cv=document.getElementById('wallMaze');
+        if(!scr || !cv) return;
+        var ctx=cv.getContext('2d');
+        var COLS=15, ROWS=10, cells=null;
+        function gen(cols, rows){
+          var cs=[]; for(var z=0;z<rows;z++){ cs.push([]); for(var x=0;x<cols;x++) cs[z].push({x:x,z:z,visited:false,walls:[true,true,true,true]}); }
+          var stack=[cs[0][0]]; cs[0][0].visited=true;
+          var dirs=[[0,-1,0,2],[1,0,1,3],[0,1,2,0],[-1,0,3,1]];
+          while(stack.length){
+            var cur=stack[stack.length-1];
+            var opts=dirs.filter(function(d){ var nx=cur.x+d[0], nz=cur.z+d[1]; return nx>=0&&nz>=0&&nx<cols&&nz<rows&&!cs[nz][nx].visited; });
+            if(!opts.length){ stack.pop(); continue; }
+            var d=opts[Math.floor(Math.random()*opts.length)];
+            var nx2=cur.x+d[0], nz2=cur.z+d[1];
+            cur.walls[d[2]]=false; cs[nz2][nx2].walls[d[3]]=false; cs[nz2][nx2].visited=true;
+            stack.push(cs[nz2][nx2]);
+          }
+          cs[0][0].walls[0]=false;            /* lối vào: góc trên–trái */
+          cs[rows-1][cols-1].walls[2]=false;  /* lối ra: góc dưới–phải */
+          return cs;
+        }
+        function draw(){
+          var w=scr.clientWidth, h=scr.clientHeight;
+          if(!w || !h) return;
+          var dpr=Math.min(window.devicePixelRatio||1, 2);
+          var pw=Math.round(w*dpr), ph=Math.round(h*dpr);
+          if(cv.width!==pw || cv.height!==ph){ cv.width=pw; cv.height=ph; }
+          if(!cells){
+            COLS=Math.max(9, Math.min(20, Math.round(w/76)));
+            ROWS=Math.max(7, Math.min(14, Math.round(h/76)));
+            cells=gen(COLS, ROWS);
+          }
+          var acc=(getComputedStyle(scr).getPropertyValue('--acc')||'#ffb020').trim()||'#ffb020';
+          ctx.setTransform(dpr,0,0,dpr,0,0);
+          ctx.clearRect(0,0,w,h);
+          var cell=Math.min(w/(COLS+1.6), h/(ROWS+1.6));
+          /* tâm mê cung trùng tâm vùng sáng của đèn (cùng vị trí mask và
+             #lampGlow): desktop lệch trái 26%/44%, mobile ở trên 50%/10% —
+             nhờ vậy phần mê cung rõ nhất luôn nằm ở vùng tường trống quanh
+             đèn, không bị thẻ form che hết. */
+          var mob=window.innerWidth<=820;
+          var ox=w*(mob?0.5:0.26)-cell*COLS/2, oy=h*(mob?0.10:0.44)-cell*ROWS/2;
+          ctx.strokeStyle=acc; ctx.globalAlpha=.9;
+          ctx.lineWidth=Math.max(2, cell*.085); ctx.lineCap='round'; ctx.lineJoin='round';
+          ctx.shadowColor=acc; ctx.shadowBlur=cell*.22;
+          ctx.beginPath();
+          for(var z=0;z<ROWS;z++) for(var x=0;x<COLS;x++){
+            var c=cells[z][x], px=ox+x*cell, py=oy+z*cell;
+            if(c.walls[0]){ ctx.moveTo(px,py); ctx.lineTo(px+cell,py); }
+            if(c.walls[1]){ ctx.moveTo(px+cell,py); ctx.lineTo(px+cell,py+cell); }
+            if(c.walls[2]){ ctx.moveTo(px,py+cell); ctx.lineTo(px+cell,py+cell); }
+            if(c.walls[3]){ ctx.moveTo(px,py); ctx.lineTo(px,py+cell); }
+          }
+          ctx.stroke();
+          ctx.shadowBlur=0; ctx.globalAlpha=1;
+        }
+        new MutationObserver(draw).observe(scr,{attributes:true, attributeFilter:['data-lamp','class']});
+        var rto=null;
+        window.addEventListener('resize', function(){ clearTimeout(rto); rto=setTimeout(draw, 180); });
+        draw();
       })();
 
       /* ---------- tiêu đề + dòng phụ của thẻ đổi theo tab Đăng nhập / Đăng ký ---------- */
