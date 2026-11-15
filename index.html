@@ -1984,6 +1984,16 @@
         }
         const users=loadJSON(LS_USERS,{});
         let key=findUserKey(users,u);
+        /* Kết quả kiểm tra đám mây của lần đăng nhập này, BA TRẠNG THÁI như
+           bên Đăng ký: 'found' = đám mây có tài khoản; 'missing' = đám mây
+           trả lời CHẮC CHẮN chưa có; 'unknown'/'unavailable' = CHƯA kiểm tra
+           được (chưa kết nối / mạng chập chờn / quá giờ) → TUYỆT ĐỐI không
+           được kết luận “chưa có tài khoản”. Bản cũ hỏi đám mây đúng MỘT lần,
+           không dùng kết quả chờ kết nối, rồi gộp mọi trường hợp không thấy
+           tài khoản thành một thông báo “chưa có tài khoản (cả trên máy này
+           lẫn trên đám mây)” — trong khi tab Đăng ký cùng lúc chứng minh tài
+           khoản CÓ trên đám mây: đăng nhập báo sai là không có tài khoản. */
+        let cloudVerdict = fbState.configured ? 'unavailable' : 'off';
         /* Kiểm tra tài khoản trên ĐÁM MÂY (Firestore) TRƯỚC: tài khoản đã
            đăng ký ở BẤT KỲ máy nào cũng đăng nhập được ở máy này, và bản
            trên đám mây là bản mới nhất (kể cả khi mật khẩu đã đổi ở máy
@@ -1991,9 +2001,16 @@
            / chưa kết nối được đám mây. */
         if(fbState.configured && !isDeletedUser(u)){
           btn.textContent='Đang kiểm tra tài khoản trên đám mây…';
-          await fbEnsureReady(); /* chờ kết nối sẵn sàng THẬT (tối đa ~12s + thử lại 1 lần) thay vì 3,5s như bản cũ */
-          if(fbState.connected){
-            const probe=await fbFetchAccount(u);
+          const cloudReady=await fbEnsureReady(); /* chờ kết nối sẵn sàng THẬT (tối đa ~12s + thử lại 1 lần) — và DÙNG kết quả trả về, không bỏ qua như bản cũ */
+          if(cloudReady){
+            let probe=await fbFetchAccount(u);
+            /* Mạng chập chờn → 'unknown': hỏi lại tối đa 2 lần nữa trước
+               khi kết luận, giống kỷ luật bên Đăng ký (ở đó hỏi lại 1 lần). */
+            for(let retry=0; probe.status==='unknown' && retry<2; retry++){
+              btn.textContent='Mạng chập chờn — đang kiểm tra lại trên đám mây… ('+(retry+2)+'/3)';
+              probe=await fbFetchAccount(u);
+            }
+            cloudVerdict=probe.status;
             if(probe.status==='found'){ users[u]=probe.rec; saveJSON(LS_USERS,users); key=u; }
             else if(probe.status==='missing' && key && users[key] && users[key].passHash){
               /* Có trên máy mà đám mây CHẮC CHẮN chưa có (tài khoản đăng ký
@@ -2001,14 +2018,29 @@
                  nhập này để từ nay máy khác cũng vào được. */
               await fbSaveAccount(Object.assign({username:key}, users[key]));
             }
-            /* probe 'unknown' (mạng chập chờn): không ghi đè gì, dùng bản
-               trên máy ở dưới như dự phòng. */
+            /* probe vẫn 'unknown' sau các lần thử lại: không ghi đè gì —
+               nếu máy này có bản đầy đủ thì dùng làm dự phòng ở dưới; nếu
+               không có bản nào thì báo “chưa kiểm tra được”, KHÔNG báo
+               “chưa có tài khoản”. */
           }
-          /* Chưa kết nối được (mất mạng): rơi xuống dùng bản trên máy như cũ. */
+          /* Chưa kết nối được (mất mạng): cloudVerdict giữ 'unavailable',
+             rơi xuống dùng bản trên máy như cũ nếu có. */
         }
-        if(!key){ $('loginErr').textContent= fbState.configured
-          ? 'Chưa có tài khoản với tên đăng nhập này (cả trên máy này lẫn trên đám mây). Hãy đăng ký trước, hoặc kiểm tra mạng rồi thử lại.'
-          : 'Chưa có tài khoản với tên đăng nhập này. Hãy đăng ký trước.'; return; }
+        if(!key){
+          if(cloudVerdict==='unknown' || cloudVerdict==='unavailable'){
+            /* Chưa hỏi được đám mây thì không khẳng định được gì về tài
+               khoản: báo đúng sự thật để người dùng kiểm tra mạng và thử
+               lại, thay vì báo sai “chưa có tài khoản”. */
+            $('loginErr').textContent='Chưa kiểm tra được tài khoản trên đám mây (chưa kết nối được hoặc mạng chập chờn) — game chưa thể khẳng định tài khoản này có hay chưa. Hãy kiểm tra mạng, chờ dòng trạng thái báo đã kết nối đám mây rồi bấm Đăng nhập lại.';
+          } else {
+            /* Chỉ khi đám mây đã trả lời CHẮC CHẮN 'missing' (hoặc game
+               không cấu hình đám mây) mới được nói là chưa có tài khoản. */
+            $('loginErr').textContent= fbState.configured
+              ? 'Chưa có tài khoản với tên đăng nhập này (cả trên máy này lẫn trên đám mây). Hãy đăng ký trước.'
+              : 'Chưa có tài khoản với tên đăng nhập này. Hãy đăng ký trước.';
+          }
+          return;
+        }
         if(!users[key].passHash){ $('loginErr').textContent='Tài khoản này được đăng ký ở máy khác — máy này mới có thông tin hiển thị của tài khoản, cần có mạng để tải thông tin đăng nhập về. Hãy kiểm tra mạng rồi bấm Vào game lại.'; return; }
         if(!(await passVerify(users[key].passHash, p))){ $('loginErr').textContent='Mật khẩu chưa đúng. Hãy kiểm tra lại — nếu quên mật khẩu, hãy nhờ giáo viên (Admin) đặt lại giúp.'; return; }
         if(passIsLegacy(users[key].passHash)){ /* đăng nhập đúng bằng mã băm cũ → nâng cấp ngay lên KDF chậm có muối, lưu máy + đẩy đám mây */
