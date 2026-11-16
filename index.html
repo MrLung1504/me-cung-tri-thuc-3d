@@ -702,6 +702,96 @@
         #lampBtn svg{width:84px;}
       }
     </style>
+    <style>
+      /* ================================================================
+         LIQUID BUTTON — nút kính + chất lỏng tràn đầy khi tương tác
+         (theo mẫu Reel “Liquid Button”): lớp chất lỏng là ::after/::before
+         với z-index:-1 nằm TRÊN nền kính nhưng DƯỚI chữ (nút có
+         isolation:isolate), lớn lên bằng transform:scale từ điểm chạm
+         (--lx/--ly do JS đặt theo pointer) hoặc từ đáy khi di chuột.
+         Chỉ dùng transform/opacity — không filter nặng, không WebGL.
+         Nút bị khóa (:disabled) KHÔNG bao giờ đầy màu: lớp chất lỏng bị
+         ép về 0 và nút giữ nguyên xám/mờ như cũ.
+         Không đổi id/class/logic nào mà JS đang dùng.
+         ================================================================ */
+      .btn,.hudBtn,.lbTab,.aTab,.subjBtn,.roleBtn,.ansBtn{position:relative; isolation:isolate;}
+      .tabBtn,.segBtn,.slot{isolation:isolate;}
+      .btn::after,.hudBtn::after,.lbTab::after,.aTab::after,.subjBtn::after,.roleBtn::after,
+      .tabBtn::after,.segBtn::after,.slot::after,.ansBtn::before{
+        content:""; position:absolute; inset:0; border-radius:inherit; z-index:-1; pointer-events:none;
+        background:linear-gradient(180deg, rgba(255,255,255,.38), rgba(255,255,255,0) 46%), var(--liqBg, linear-gradient(135deg,#16a34a,#0ea5e9));
+        transform:scale(0); transform-origin:var(--lx,50%) var(--ly,100%); opacity:0;
+        transition:transform .45s cubic-bezier(.2,.75,.3,1), opacity .25s ease;
+      }
+      /* trạng thái ĐẦY chất lỏng: di chuột / focus phím / đang chạm (.liqPress do JS gắn) */
+      .btn:hover:not(:disabled)::after,.btn:focus-visible:not(:disabled)::after,.btn.liqPress::after,.btn:active:not(:disabled)::after,
+      .hudBtn:hover::after,.hudBtn:focus-visible::after,.hudBtn.liqPress::after,.hudBtn:active::after,
+      .lbTab:hover:not(.on)::after,.lbTab:focus-visible:not(.on)::after,.lbTab.liqPress:not(.on)::after,
+      .aTab:hover:not(.on)::after,.aTab:focus-visible:not(.on)::after,.aTab.liqPress:not(.on)::after,
+      .subjBtn:hover:not(:disabled)::after,.subjBtn:focus-visible:not(:disabled)::after,.subjBtn.liqPress::after,.subjBtn:active:not(:disabled)::after,
+      .roleBtn:hover::after,.roleBtn:focus-visible::after,.roleBtn.liqPress::after,.roleBtn.on::after,
+      .slot:hover::after,.slot.liqPress::after,.slot:active::after,
+      .ansBtn:hover:not(:disabled)::before,.ansBtn:focus-visible:not(:disabled)::before,.ansBtn.liqPress::before{
+        transform:scale(1); opacity:1;
+      }
+      /* ---------- màu chất lỏng + màu chữ khi đầy, theo từng loại nút ---------- */
+      .btn{--liqBg:linear-gradient(135deg,#16a34a,#0ea5e9);}
+      .btn:hover:not(:disabled),.btn.liqPress{color:#fff;}
+      .btn.primary{--liqBg:linear-gradient(135deg,#f59e0b,#f97316);}
+      .btn.green{--liqBg:linear-gradient(135deg,#0ea5e9,#0369a1);}
+      .btn.danger{--liqBg:rgba(190,40,70,.55);}
+      .btn.danger:hover:not(:disabled),.btn.danger.liqPress{color:#ffe4ec;}
+      .hudBtn{--liqBg:linear-gradient(135deg,#0ea5e9,#075985);}
+      .hudBtn:hover,.hudBtn.liqPress{color:#fff;}
+      .lbTab{--liqBg:linear-gradient(135deg,#16a34a,#0ea5e9);}
+      .lbTab:hover:not(.on),.lbTab.liqPress:not(.on){color:#fff;}
+      .lbTab.on::after,.aTab.on::after{display:none;} /* tab đang chọn đã đầy màu bằng nền/viên thuốc trượt sẵn có */
+      .aTab{--liqBg:rgba(14,165,233,.38);}
+      .aTab:hover:not(.on),.aTab.liqPress:not(.on){color:#fff;}
+      .roleBtn{--liqBg:linear-gradient(135deg,#16a34a,#0ea5e9);}
+      .roleBtn:hover,.roleBtn.liqPress,.roleBtn.on{color:#fff;}
+      /* chip môn học: đầy đúng màu của môn đó (--sc), chữ tối cho dễ đọc trên màu sáng */
+      .subjBtn{--liqBg:var(--sc);}
+      .subjBtn:hover:not(:disabled),.subjBtn.liqPress{color:#0d1526;}
+      .subjBtn:hover:not(:disabled) .ic,.subjBtn.liqPress .ic{background:rgba(255,255,255,.38); box-shadow:none;}
+      .subjBtn:hover:not(:disabled) span[style*="--muted"],.subjBtn.liqPress span[style*="--muted"]{color:#0d1526 !important;}
+      /* ô kỹ năng: chất lỏng là màu riêng của kỹ năng (--skc), tràn dạng nhuộm mờ để icon/chữ vẫn rõ */
+      .slot{--liqBg:var(--skc,#0ea5e9);}
+      .slot:hover::after,.slot:active::after{opacity:.42;}
+      .slot.liqPress::after{opacity:.55;}
+      /* thẻ đáp án: di chuột/chạm = nhuộm xanh ngọc; ĐÚNG đầy xanh lá, SAI đầy đỏ (giữ nguyên vòng + dấu ✓ + rung ở các khối trên) */
+      .ansBtn{--liqBg:rgba(56,214,245,.22);}
+      .ansBtn.right{--liqBg:linear-gradient(135deg,#22c55e,#15803d); color:#052e12;}
+      .ansBtn.right::before{transform:scale(1); opacity:1;}
+      .ansBtn.right::after{background:#ffffff; color:#15803d; box-shadow:0 0 0 2px rgba(5,46,18,.28);}
+      .ansBtn.wrong{--liqBg:linear-gradient(135deg,#dc2626,#7f1d1d); color:#fff;}
+      .ansBtn.wrong::before{transform:scale(1); opacity:1;}
+
+      /* ---------- màn đăng nhập/đăng ký: chất lỏng = màu đèn hiện tại (--acc) ---------- */
+      /* nút chính: lúc nghỉ là kính nhuộm màu đèn, chạm/di chuột thì --acc tràn đầy, chữ chuyển tối */
+      #authScreen .btn.primary{--liqBg:var(--acc); background:var(--accSoft); color:var(--acc); border:1px solid var(--acc); box-shadow:0 10px 26px -10px var(--accGlow);}
+      #authScreen .btn.primary:hover:not(:disabled),#authScreen .btn.primary:focus-visible:not(:disabled),#authScreen .btn.primary.liqPress,#authScreen .btn.primary:active:not(:disabled){background:var(--accSoft); color:var(--accInk);}
+      /* tab Đăng nhập | Đăng ký: tab đang chọn đầy màu đèn như nút được chọn trong video */
+      #authScreen .tabBtn{--liqBg:var(--acc); border-radius:999px; padding-left:14px; padding-right:14px; margin-right:12px;}
+      #authScreen .tabBtn.on::after{transform:scale(1); opacity:1;}
+      #authScreen .tabBtn.on{color:var(--accInk);}
+      #authScreen .tabBtn:hover:not(.on)::after,#authScreen .tabBtn:focus-visible:not(.on)::after{transform:scale(1); opacity:.28;}
+      #authScreen .tabBtn:hover:not(.on){color:#f2f4f8;}
+      #authScreen .tabBtn.liqPress:not(.on)::after{transform:scale(1); opacity:.45;}
+      /* viên chọn khối 6/7/8/9: khối được chọn đã đầy màu đèn bằng viên thuốc trượt (.segPill);
+         viên chưa chọn khi di chuột/chạm thì nhuộm màu đèn mờ */
+      #authScreen .segBtn{--liqBg:var(--acc);}
+      #authScreen .segBtn.on::after{display:none;}
+      #authScreen .segBtn:hover:not(.on)::after,#authScreen .segBtn:focus-visible:not(.on)::after{transform:scale(1); opacity:.30;}
+      #authScreen .segBtn.liqPress:not(.on)::after{transform:scale(1); opacity:.5;}
+
+      /* ---------- nút bị khóa/vô hiệu: KHÔNG đầy màu, giữ xám/mờ ---------- */
+      .btn:disabled::after,.hudBtn:disabled::after,.lbTab:disabled::after,.aTab:disabled::after,
+      .subjBtn:disabled::after,.roleBtn:disabled::after,.tabBtn:disabled::after,.segBtn:disabled::after,
+      .ansBtn:disabled:not(.right):not(.wrong)::before{
+        transform:scale(0) !important; opacity:0 !important;
+      }
+    </style>
   </head>
   <body>
     <canvas id="gameCanvas"></canvas>
@@ -4956,6 +5046,40 @@
           var b=g(id); if(b) new MutationObserver(sync).observe(b,{attributes:true, attributeFilter:['class']});
         });
         sync();
+      })();
+
+      /* ---------- LIQUID BUTTON: chất lỏng tràn từ đúng điểm chạm ----------
+         Chỉ lo HIỂN THỊ: đặt --lx/--ly (điểm chạm tương đối trong nút) làm
+         tâm lan của lớp chất lỏng CSS, và gắn .liqPress trong lúc chạm để
+         điện thoại (không có hover) vẫn thấy nút đầy màu. Không chặn, không
+         đổi bất kỳ hành vi bấm/logic nào; nút disabled thì bỏ qua. */
+      (function liquidFx(){
+        var SEL='.btn,.hudBtn,.lbTab,.aTab,.subjBtn,.roleBtn,.tabBtn,.segBtn,.slot,.ansBtn';
+        function setOrigin(el, ev){
+          var r=el.getBoundingClientRect(); if(!r.width || !r.height) return;
+          var x=(typeof ev.clientX==='number') ? ((ev.clientX-r.left)/r.width*100) : 50;
+          var y=(typeof ev.clientY==='number') ? ((ev.clientY-r.top)/r.height*100) : 100;
+          el.style.setProperty('--lx', Math.max(0,Math.min(100,x))+'%');
+          el.style.setProperty('--ly', Math.max(0,Math.min(100,y))+'%');
+        }
+        document.addEventListener('pointerdown', function(ev){
+          var el=ev.target && ev.target.closest ? ev.target.closest(SEL) : null;
+          if(!el || el.disabled) return;
+          setOrigin(el, ev);
+          el.classList.add('liqPress');
+        }, true);
+        document.addEventListener('pointerover', function(ev){
+          var el=ev.target && ev.target.closest ? ev.target.closest(SEL) : null;
+          if(!el || el.disabled) return;
+          setOrigin(el, ev);
+        }, true);
+        function release(ev){
+          var el=ev.target && ev.target.closest ? ev.target.closest(SEL) : null;
+          if(!el) return;
+          setTimeout(function(){ el.classList.remove('liqPress'); }, 260);
+        }
+        document.addEventListener('pointerup', release, true);
+        document.addEventListener('pointercancel', release, true);
       })();
     })();
     </script>
